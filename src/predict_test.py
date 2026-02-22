@@ -20,7 +20,7 @@ class PredictConfig:
     checkpoint_path: str = "outputs/checkpoints/best.pt"
 
     # مسیر فایل تست (بدون label)
-    test_path: str = "data/test.csv"
+    test_path: str = "src/data/sentences.csv"
 
     # اسم ستون متن داخل فایل تست
     text_col: str = "sentence"  # اگر فایل شما "text" دارد این را عوض کن
