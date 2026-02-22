@@ -1,0 +1,16 @@
+numpy
+pandas
+torch
+transformers
+datasets<3.0.0
+scikit-learn
+tqdm
+matplotlib
+sympy
+
+
+
+
+
+
+
