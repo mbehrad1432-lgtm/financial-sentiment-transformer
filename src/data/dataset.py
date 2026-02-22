@@ -35,42 +35,52 @@ def load_phrasebank_dataframe(
     variant: str = "sentences_allagree",
 ) -> pd.DataFrame:
     """
-    Loads FinancialPhraseBank from HuggingFace and returns a clean DataFrame
+    Loads FinancialPhraseBank (with simple local caching) and returns a clean DataFrame
     with columns: text, label_str, label.
-    variant examples:
-      - "sentences_allagree"
-      - "sentences_75agree"
-      - "sentences_66agree"
-      - "sentences_50agree"
+
+    Caching logic:
+      - If data/financial_phrasebank_<variant>_raw.csv exists -> load from disk.
+      - Else -> download from HuggingFace once, save to that csv, then use it.
     """
-    ds = load_dataset("financial_phrasebank", variant, trust_remote_code=True)
+    # ---- 1) set up cache path ----
+    data_dir = "data"
+    os.makedirs(data_dir, exist_ok=True)
+    cache_path = os.path.join(
+        data_dir,
+        f"financial_phrasebank_{variant}_raw.csv",
+    )
 
-    # ds["train"] contains the full set for that variant
-    df = pd.DataFrame(ds["train"])
+    # ---- 2) load raw data, from cache if possible ----
+    if os.path.exists(cache_path):
+        # No download, just read cached csv
+        df = pd.read_csv(cache_path)
+    else:
+        # Download from HuggingFace once
+        ds = load_dataset("financial_phrasebank", variant, trust_remote_code=True)
+        df = pd.DataFrame(ds["train"])
+        # Save raw HF dataframe for next runs
+        df.to_csv(cache_path, index=False)
 
-    # Expected columns: "sentence", "label"
-    # label is usually int (0,1,2) in HF dataset; sentence is text
-    # But we'll normalize to label_str + label_id anyway for robustness.
+    # ---- 3) normalize columns (same as before) ----
     if "sentence" not in df.columns:
         raise ValueError(f"Expected 'sentence' column, got: {df.columns.tolist()}")
 
-    # HF dataset typically: label 0: negative, 1: neutral, 2: positive
-    # We'll store both numeric and string forms.
     df = df.rename(columns={"sentence": "text"})
+
     if "label" not in df.columns:
         raise ValueError(f"Expected 'label' column, got: {df.columns.tolist()}")
 
     # ensure int labels
     df["label"] = df["label"].astype(int)
 
-    # map to strings (assumes HF order: 0 neg, 1 neu, 2 pos)
+    # HF mapping: 0 -> negative, 1 -> neutral, 2 -> positive
     hf_id2label = {0: "negative", 1: "neutral", 2: "positive"}
     df["label_str"] = df["label"].map(hf_id2label)
 
-    # reorder columns
+    # Reorder columns
     df = df[["text", "label_str", "label"]].copy()
 
-    # shuffle deterministically
+    # Deterministic shuffle
     df = df.sample(frac=1.0, random_state=seed).reset_index(drop=True)
     return df
 
