@@ -15,6 +15,8 @@ from torch.utils.data import Dataset, DataLoader
 from datasets import load_dataset
 from transformers import AutoTokenizer
 
+import matplotlib.pyplot as plt
+
 
 LABEL2ID = {"negative": 0, "neutral": 1, "positive": 2}
 ID2LABEL = {v: k for k, v in LABEL2ID.items()}
@@ -28,6 +30,35 @@ class DataConfig:
     seed: int = 42
     batch_size: int = 32
     num_workers: int = 0
+
+
+def plot_label_distribution(
+    df: pd.DataFrame,
+    save_path: str = os.path.join(
+        "src", "outputs", "figures", "label_distribution.png"
+    ),
+) -> None:
+    """
+    Plot and save class/label distribution for the dataset.
+
+    Expects a 'label' column with integer IDs compatible with ID2LABEL.
+    """
+    # Ensure directory exists
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+
+    # Count labels and keep them ordered by id
+    counts = df["label"].value_counts().sort_index()
+    label_ids = counts.index.tolist()
+    label_names = [ID2LABEL[i] for i in label_ids]
+
+    plt.figure(figsize=(6, 4))
+    plt.bar(label_names, counts.values)
+    plt.xlabel("Class")
+    plt.ylabel("Count")
+    plt.title("FinancialPhraseBank Label Distribution")
+    plt.tight_layout()
+    plt.savefig(save_path)
+    plt.close()
 
 
 def load_phrasebank_dataframe(
@@ -82,6 +113,15 @@ def load_phrasebank_dataframe(
 
     # Deterministic shuffle
     df = df.sample(frac=1.0, random_state=seed).reset_index(drop=True)
+
+    # --- Plot class distribution ---
+    # Save under src/outputs/figures as you requested,
+    # with variant in the filename to distinguish runs.
+    plot_label_distribution(
+        df,
+        save_path=os.path.join("outputs", "figures", f"label_distribution_{variant}.png"),
+    )
+
     return df
 
 

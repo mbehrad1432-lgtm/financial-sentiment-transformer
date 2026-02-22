@@ -23,6 +23,10 @@ from models.model import ModelConfig, FinancialTransformer
 
 import torch.nn.functional as F
 
+from pathlib import Path
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
 class FocalLoss(nn.Module):
     """
     Multiclass Focal Loss
@@ -67,7 +71,6 @@ def set_seed(seed: int = 42):
     torch.cuda.manual_seed_all(seed)
 
 
-@dataclass
 class TrainConfig:
     variant: str = "sentences_allagree"
     seed: int = 42
@@ -76,10 +79,10 @@ class TrainConfig:
     lr: float = 1e-4
     weight_decay: float = 0.01
     grad_clip: float = 1.0
-    save_dir: str = "outputs/checkpoints"
+    save_dir: str = str(PROJECT_ROOT / "outputs" / "checkpoints")
     best_name: str = "best.pt"
-    log_csv: str = "outputs/logs/train_log.csv"
-    curve_path: str = "outputs/figures/training_curves.png"
+    log_csv: str = str(PROJECT_ROOT / "outputs" / "logs" / "train_log.csv")
+    curve_path: str = str(PROJECT_ROOT / "outputs" / "figures" / "training_curves.png")
 
 # @torch.no_grad()
 # def evaluate(model: nn.Module, loader, device: str, criterion: nn.Module) -> Dict[str, float]:
@@ -277,8 +280,9 @@ def main():
     best_path = os.path.join(train_cfg.save_dir, train_cfg.best_name)
 
     best_val_loss = float("inf")
-    os.makedirs("outputs/logs", exist_ok=True)
-    os.makedirs("outputs/figures", exist_ok=True)
+    os.makedirs(train_cfg.save_dir, exist_ok=True)
+    os.makedirs(os.path.dirname(train_cfg.log_csv), exist_ok=True)
+    os.makedirs(os.path.dirname(train_cfg.curve_path), exist_ok=True)
 
     # history = []  # list of dicts: one per epoch
 
