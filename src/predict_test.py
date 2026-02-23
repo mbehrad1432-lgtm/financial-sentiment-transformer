@@ -22,7 +22,7 @@ class PredictConfig:
     checkpoint_path: str = str(PROJECT_ROOT / "outputs" / "checkpoints" / "best.pt")
 
     # مسیر فایل تست (بدون label)
-    test_path: str = str(PROJECT_ROOT / "src" / "data" / "sentences.csv")
+    test_path: str = str(PROJECT_ROOT / "data" / "sentences.csv")
 
     text_col: str = "sentence"
 
@@ -132,13 +132,20 @@ def main():
 
     pred_labels = [ID2LABEL[i] for i in pred_ids]
 
-    # 4) add predictions next to sentence
-    out_df = test_df.copy()
-    out_df["prediction"] = pred_labels
-    out_df["prediction_id"] = pred_ids
+    # 4) build Kaggle submission: row_id,label
+    if "row_id" not in test_df.columns:
+        # اگر به هر دلیلی ستون row_id نبود، از ایندکس استفاده می‌کنیم
+        row_ids = test_df.index
+    else:
+        row_ids = test_df["row_id"]
 
-    out_df.to_csv(cfg.save_path, index=False, encoding="utf-8")
-    print(f"Saved predictions to: {cfg.save_path}")
+    submission_df = pd.DataFrame({
+        "row_id": row_ids,
+        "label": pred_labels,   # labels: "negative", "neutral", "positive"
+    })
+
+    submission_df.to_csv(cfg.save_path, index=False, encoding="utf-8")
+    print(f"Saved Kaggle submission to: {cfg.save_path}")
 
 
 if __name__ == "__main__":
