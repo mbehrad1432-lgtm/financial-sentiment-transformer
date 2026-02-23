@@ -10,21 +10,23 @@ import torch
 import matplotlib.pyplot as plt
 from transformers import AutoTokenizer
 
-from src.models.model import ModelConfig, FinancialTransformer
+from models.model import ModelConfig, FinancialTransformer
+
+from pathlib import Path
+PROJECT_ROOT = Path(__file__).resolve().parent.parent  # src/attention_viz.py -> root
 
 
 @dataclass
 class AttnVizConfig:
-    checkpoint_path: str = "outputs/checkpoints/best.pt"
+    checkpoint_path: str = str(PROJECT_ROOT / "outputs" / "checkpoints" / "best.pt")
     tokenizer_name: str = "bert-base-uncased"
     max_length: int = 64
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
-    save_dir: str = "outputs/figures/attn_heatmaps"
+    save_dir: str = str(PROJECT_ROOT / "outputs" / "figures" / "attn_heatmaps")
     num_examples: int = 5
 
-    # اگر تست را فایل جدا داری (طبق پروژه‌های دانشگاهی معمولاً یک CSV میدن)
-    test_csv_path: Optional[str] = "src/data/sentences.csv"
-    test_text_col: str = "sentence"   # یا "text" بسته به فایل تست
+    test_csv_path: Optional[str] = str(PROJECT_ROOT / "src" / "data" / "sentences.csv")
+    test_text_col: str = "sentence"
 
 
 def load_model(ckpt_path: str, device: str) -> FinancialTransformer:

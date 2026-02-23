@@ -18,14 +18,17 @@ import matplotlib.pyplot as plt
 from data.dataset import DataConfig, build_dataloaders, ID2LABEL
 from models.model import ModelConfig, FinancialTransformer
 
+from pathlib import Path
+PROJECT_ROOT = Path(__file__).resolve().parent.parent  # src/eval.py -> root
+
 
 @dataclass
 class EvalConfig:
-    checkpoint_path: str = "outputs/checkpoints/best.pt"
+    checkpoint_path: str = str(PROJECT_ROOT / "outputs" / "checkpoints" / "best.pt")
     variant: str = "sentences_allagree"
     seed: int = 42
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
-    save_dir: str = "outputs/figures"
+    save_dir: str = str(PROJECT_ROOT / "outputs" / "figures")
 
 
 @torch.no_grad()

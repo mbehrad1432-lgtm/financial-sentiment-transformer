@@ -75,7 +75,7 @@ class TrainConfig:
     variant: str = "sentences_allagree"
     seed: int = 42
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
-    epochs: int =30   #10
+    epochs: int =3   #10
     lr: float = 1e-4
     weight_decay: float = 0.01
     grad_clip: float = 1.0

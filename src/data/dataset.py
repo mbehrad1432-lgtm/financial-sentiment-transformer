@@ -17,6 +17,8 @@ from transformers import AutoTokenizer
 
 import matplotlib.pyplot as plt
 
+from pathlib import Path
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 LABEL2ID = {"negative": 0, "neutral": 1, "positive": 2}
 ID2LABEL = {v: k for k, v in LABEL2ID.items()}
@@ -34,10 +36,9 @@ class DataConfig:
 
 def plot_label_distribution(
     df: pd.DataFrame,
-    save_path: str = os.path.join(
-        "src", "outputs", "figures", "label_distribution.png"
-    ),
+    save_path: str = str(PROJECT_ROOT / "outputs" / "figures" / "label_distribution.png"),
 ) -> None:
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
     """
     Plot and save class/label distribution for the dataset.
 
@@ -74,12 +75,10 @@ def load_phrasebank_dataframe(
       - Else -> download from HuggingFace once, save to that csv, then use it.
     """
     # ---- 1) set up cache path ----
-    data_dir = "data"
-    os.makedirs(data_dir, exist_ok=True)
-    cache_path = os.path.join(
-        data_dir,
-        f"financial_phrasebank_{variant}_raw.csv",
-    )
+    data_dir = PROJECT_ROOT / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    cache_path = data_dir / f"financial_phrasebank_{variant}_raw.csv"
 
     # ---- 2) load raw data, from cache if possible ----
     if os.path.exists(cache_path):
@@ -117,10 +116,8 @@ def load_phrasebank_dataframe(
     # --- Plot class distribution ---
     # Save under src/outputs/figures as you requested,
     # with variant in the filename to distinguish runs.
-    plot_label_distribution(
-        df,
-        save_path=os.path.join("outputs", "figures", f"label_distribution_{variant}.png"),
-    )
+    plot_path = PROJECT_ROOT / "outputs" / "figures" / f"label_distribution_{variant}.png"
+    plot_label_distribution(df, save_path=str(plot_path))
 
     return df
 
