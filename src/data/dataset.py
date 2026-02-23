@@ -18,7 +18,7 @@ from transformers import AutoTokenizer
 import matplotlib.pyplot as plt
 
 from pathlib import Path
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent  # src/data/dataset.py -> root
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 LABEL2ID = {"negative": 0, "neutral": 1, "positive": 2}
 ID2LABEL = {v: k for k, v in LABEL2ID.items()}
