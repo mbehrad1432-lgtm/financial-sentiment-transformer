@@ -4,10 +4,7 @@ __pycache__/
 *$py.class
 
 # Dataset cache (wherever it ended up)
-financial_phrasebank_*_raw.csv
 data/financial_phrasebank_*_raw.csv
-src/data/financial_phrasebank_*_raw.csv
 
 # Outputs
 outputs/
-src/outputs/

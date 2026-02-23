@@ -13,26 +13,24 @@ from tqdm import tqdm
 from models.model import ModelConfig, FinancialTransformer
 from data.dataset import ID2LABEL
 
+from pathlib import Path
+PROJECT_ROOT = Path(__file__).resolve().parent.parent  # src/predict_test.py -> root
+
 
 @dataclass
 class PredictConfig:
-    # بهترین مدل ذخیره‌شده در train.py
-    checkpoint_path: str = "outputs/checkpoints/best.pt"
+    checkpoint_path: str = str(PROJECT_ROOT / "outputs" / "checkpoints" / "best.pt")
 
     # مسیر فایل تست (بدون label)
-    test_path: str = "src/data/sentences.csv"
+    test_path: str = str(PROJECT_ROOT / "src" / "data" / "sentences.csv")
 
-    # اسم ستون متن داخل فایل تست
-    text_col: str = "sentence"  # اگر فایل شما "text" دارد این را عوض کن
+    text_col: str = "sentence"
 
     batch_size: int = 64
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # مسیر خروجی submission
-    save_path: str = "outputs/submissions/test_predictions.csv"
+    save_path: str = str(PROJECT_ROOT / "outputs" / "submissions" / "test_predictions.csv")
 
-    # اگر بخواهی precision مثبت را بالاتر ببری
-    # مثلا 0.60 بگذار — اگر نخواستی None بگذار
     positive_threshold: float | None = None
 
 
