@@ -25,7 +25,7 @@ class AttnVizConfig:
     save_dir: str = str(PROJECT_ROOT / "outputs" / "figures" / "attn_heatmaps")
     num_examples: int = 5
 
-    test_csv_path: Optional[str] = str(PROJECT_ROOT / "src" / "data" / "sentences.csv")
+    test_csv_path: Optional[str] = str(PROJECT_ROOT / "data" / "sentences.csv")
     test_text_col: str = "sentence"
 
 

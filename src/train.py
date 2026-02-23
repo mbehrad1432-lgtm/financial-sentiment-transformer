@@ -75,7 +75,7 @@ class TrainConfig:
     variant: str = "sentences_allagree"
     seed: int = 42
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
-    epochs: int =3   #10
+    epochs: int = 45   #10
     lr: float = 1e-4
     weight_decay: float = 0.01
     grad_clip: float = 1.0
@@ -260,12 +260,13 @@ def main():
 
     #criterion = nn.CrossEntropyLoss(weight=weights)
         
-    # alpha = torch.tensor([1.7, 1.0, 1.7], device=device)
-    # criterion = FocalLoss(gamma=2, alpha=alpha)
+    alpha = torch.tensor([1.7, 0.43, 0.86], device=device)
+    criterion = FocalLoss(gamma=2, alpha=alpha)
 
     # بعد از تعیین device
-    class_weights = torch.tensor([1.0, 1.0, 1.15], device=device)  # pos کمی بزرگ‌تر
-    criterion = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=0.05)
+    # class_weights = torch.tensor([1.0, 1.0, 1.15], device=device)  # pos کمی بزرگ‌تر
+    # weight=class_weights,
+    # criterion = nn.CrossEntropyLoss( label_smoothing=0.05)
 
 
 
