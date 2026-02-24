@@ -69,15 +69,31 @@ class ModelConfig:
 
 
 class FinancialTransformer(nn.Module):
-    def __init__(self, cfg: ModelConfig):
+    def __init__(self, cfg: ModelConfig, embedding_matrix: torch.Tensor | None = None):
         super().__init__()
         self.cfg = cfg
 
-        self.token_emb = nn.Embedding(cfg.vocab_size, cfg.d_model)
+        # --- Token embeddings ---
+        # If we pass a pretrained matrix (GloVe-based), use it.
+        # Otherwise fall back to a normal nn.Embedding.
+        if embedding_matrix is None:
+            self.token_emb = nn.Embedding(cfg.vocab_size, cfg.d_model)
+            self._use_pretrained = False
+        else:
+            # embedding_matrix should already be on the correct device
+            self.token_emb = nn.Embedding.from_pretrained(
+                embedding_matrix, freeze=False
+            )
+            self._use_pretrained = True
+
+        # --- Positional encoding (this is what was missing!) ---
         self.pos_enc = SinusoidalPositionalEncoding(
-            d_model=cfg.d_model, max_len=cfg.max_length, dropout=cfg.dropout
+            d_model=cfg.d_model,
+            max_len=cfg.max_length,
+            dropout=cfg.dropout,
         )
 
+        # --- Transformer encoder blocks ---
         self.blocks = nn.ModuleList(
             [
                 TransformerBlock(
@@ -90,6 +106,7 @@ class FinancialTransformer(nn.Module):
             ]
         )
 
+        # --- Classification head ---
         self.classifier = nn.Sequential(
             nn.Linear(cfg.d_model, cfg.d_model),
             nn.GELU(),
@@ -100,8 +117,11 @@ class FinancialTransformer(nn.Module):
         self._init_weights()
 
     def _init_weights(self):
-        # Good default init for stability
-        nn.init.normal_(self.token_emb.weight, mean=0.0, std=0.02)
+        # Only re-init token_emb if we're NOT using pretrained embeddings.
+        if not getattr(self, "_use_pretrained", False):
+            nn.init.normal_(self.token_emb.weight, mean=0.0, std=0.02)
+
+        # Initialize linear layers
         for m in self.modules():
             if isinstance(m, nn.Linear):
                 nn.init.xavier_uniform_(m.weight)
@@ -121,21 +141,30 @@ class FinancialTransformer(nn.Module):
           logits: (B,num_classes)
           last_attn: (B,H,T,T) if return_attn else None
         """
-        x = self.token_emb(input_ids)  # (B,T,d_model)
+        # (B,T,d_model)
+        x = self.token_emb(input_ids)
         x = self.pos_enc(x)
 
         last_attn = None
         for i, block in enumerate(self.blocks):
             is_last = (i == len(self.blocks) - 1)
             if return_attn and is_last:
-                x, last_attn = block(x, attention_mask=attention_mask, return_attn=True)
+                x, last_attn = block(
+                    x,
+                    attention_mask=attention_mask,
+                    return_attn=True,
+                )
             else:
-                x, _ = block(x, attention_mask=attention_mask, return_attn=False)
+                x, _ = block(
+                    x,
+                    attention_mask=attention_mask,
+                    return_attn=False,
+                )
 
         pooled = masked_mean_pooling(x, attention_mask)  # (B,d_model)
         logits = self.classifier(pooled)  # (B,C)
-        return logits, last_attn
 
+        return logits, last_attn
 
 if __name__ == "__main__":
     torch.manual_seed(0)

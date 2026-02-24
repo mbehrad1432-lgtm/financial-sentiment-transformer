@@ -75,7 +75,7 @@ class TrainConfig:
     variant: str = "sentences_allagree"
     seed: int = 42
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
-    epochs: int = 45   #10
+    epochs: int = 80   #10
     lr: float = 1e-4
     weight_decay: float = 0.01
     grad_clip: float = 1.0
@@ -206,7 +206,6 @@ def train_one_epoch(
         "macro_f1": float(train_macro_f1),
     }
 
-
 def main():
     # make torch import stable on some windows setups
     os.environ["TORCHDYNAMO_DISABLE"] = "1"
@@ -214,7 +213,7 @@ def main():
     train_cfg = TrainConfig()
     data_cfg = DataConfig(
         tokenizer_name="bert-base-uncased",
-        max_length=128, #128
+        max_length=128,
         train_frac=0.8,
         seed=train_cfg.seed,
         batch_size=32,
@@ -222,153 +221,139 @@ def main():
     )
 
     set_seed(train_cfg.seed)
+    device = train_cfg.device  # IMPORTANT: define early
 
+    # --------------------
+    # 1) Data
+    # --------------------
     train_loader, val_loader, tokenizer, id2label = build_dataloaders(
         data_cfg, variant=train_cfg.variant, return_text_in_val=False
     )
-    
+
+    # --------------------
+    # 2) Pretrained embeddings (GloVe)  <-- allowed part
+    # --------------------
+    embedding_dim = 100  # GloVe 100d
+    vocab_size = tokenizer.vocab_size
+
+    # default random init for all tokens
+    embedding_matrix = torch.randn(vocab_size, embedding_dim) * 0.01
+
+    # IMPORTANT: use an absolute path relative to PROJECT_ROOT
+    glove_path = PROJECT_ROOT / "data" / "embeddings" / "glove.6B.100d.txt"
+    print("Loading GloVe from:", glove_path)
+
+    # Fail fast with a helpful message
+    if not glove_path.exists():
+        raise FileNotFoundError(
+            f"GloVe file not found at: {glove_path}\n"
+            f"Put glove.6B.100d.txt in: {PROJECT_ROOT / 'data' / 'embeddings'}"
+        )
+
+    glove = {}
+    with open(glove_path, "r", encoding="utf8") as f:
+        for line in f:
+            parts = line.rstrip().split(" ")
+            word = parts[0]
+            vec = np.asarray(parts[1:], dtype="float32")
+            glove[word] = vec
+
+    # fill matrix for tokens that exist in GloVe
+    for token, idx in tokenizer.get_vocab().items():
+        w = token
+        if w.startswith("##"):
+            w = w[2:]
+        w = w.lower()
+        if w in glove:
+            embedding_matrix[idx] = torch.from_numpy(glove[w])
+
+    embedding_matrix = embedding_matrix.to(device)
+
+    # --------------------
+    # 3) Model
+    # --------------------
     model_cfg = ModelConfig(
-        vocab_size=tokenizer.vocab_size,
+        vocab_size=vocab_size,
         max_length=data_cfg.max_length,
-        d_model=256,
+        d_model=embedding_dim,       # MUST match embedding_dim
         num_heads=4,
-        num_layers=3,
-        d_ff=1024,
-        dropout=0.2,
+        num_layers=2,                # slightly smaller to reduce overfit
+        d_ff=4 * embedding_dim,
+        dropout=0.3,
         num_classes=3,
     )
 
-    device = train_cfg.device
+    model = FinancialTransformer(model_cfg, embedding_matrix=embedding_matrix).to(device)
 
+    # --------------------
+    # 4) Loss + Optimizer
+    # --------------------
+    # alpha = torch.tensor([1.7, 0.43, 0.86], device=device)
+    # criterion = FocalLoss(gamma=2, alpha=alpha)
+    # If you want the simpler/cleaner option (often more stable with sampler), use:
+    # weights=torch.tensor([1.15, 1.0, 1.10], device=device)
+    criterion = nn.CrossEntropyLoss()
 
+    optimizer = AdamW(
+        model.parameters(),
+        lr=train_cfg.lr,
+        weight_decay=train_cfg.weight_decay
+    )
 
-# ---- compute class weights from train_loader ----
-    # counts = torch.zeros(3)
-    # for batch in train_loader:
-    #     y = batch["labels"]
-    #     for c in range(3):
-    #         counts[c] += (y == c).sum()
-    # inv = counts.sum() / (counts + 1e-6)
-    # alpha = 0.8  # پیشنهاد اول
-    # weights = inv ** alpha
-    # weights = weights / weights.mean()   # بهتر از sum*3
-    # weights = weights.to(device)
+    # Optional scheduler (you already import it)
+    # scheduler = CosineAnnealingLR(optimizer, T_max=train_cfg.epochs, eta_min=1e-6)
 
-    # print("class counts:", counts.tolist())
-    # print("inv:", inv.tolist())
-    # print("class weights:", weights.tolist())
-
-    #criterion = nn.CrossEntropyLoss(weight=weights)
-        
-    alpha = torch.tensor([1.7, 0.43, 0.86], device=device)
-    criterion = FocalLoss(gamma=2, alpha=alpha)
-
-    # بعد از تعیین device
-    # class_weights = torch.tensor([1.0, 1.0, 1.15], device=device)  # pos کمی بزرگ‌تر
-    # weight=class_weights,
-    # criterion = nn.CrossEntropyLoss( label_smoothing=0.05)
-
-
-
-
-
-    model = FinancialTransformer(model_cfg).to(device)
-
-    optimizer = AdamW(model.parameters(), lr=train_cfg.lr, weight_decay=train_cfg.weight_decay)
-    
-
-    os.makedirs(train_cfg.save_dir, exist_ok=True)
-    best_path = os.path.join(train_cfg.save_dir, train_cfg.best_name)
-
-    best_val_loss = float("inf")
+    # --------------------
+    # 5) Outputs / paths
+    # --------------------
     os.makedirs(train_cfg.save_dir, exist_ok=True)
     os.makedirs(os.path.dirname(train_cfg.log_csv), exist_ok=True)
     os.makedirs(os.path.dirname(train_cfg.curve_path), exist_ok=True)
 
-    # history = []  # list of dicts: one per epoch
+    best_path = os.path.join(train_cfg.save_dir, train_cfg.best_name)
 
-    # for epoch in range(1, train_cfg.epochs + 1):
-    #     train_metrics = train_one_epoch(
-    #     model, train_loader, optimizer, device,
-    #     grad_clip=train_cfg.grad_clip,
-    #     criterion=criterion
-    #     )
-    #     val_metrics = evaluate(model, val_loader, device, criterion=criterion)
-
-    #     print(
-    #         f"Epoch {epoch:02d} | "
-    #         f"train loss {train_metrics['loss']:.4f} acc {train_metrics['acc']:.4f} | "
-    #         f"val loss {val_metrics['loss']:.4f} acc {val_metrics['acc']:.4f}"
-    #     )
-    #     history.append({
-    #     "epoch": epoch,
-    #     "train_loss": train_metrics["loss"],
-    #     "train_acc": train_metrics["acc"],
-    #     "val_loss": val_metrics["loss"],
-    #     "val_acc": val_metrics["acc"],
-    #     })
-
-    #     # save best checkpoint by val loss
-    #     if val_metrics["loss"] < best_val_loss:
-    #         best_val_loss = val_metrics["loss"]
-
-            
-    #         torch.save(
-    #             {
-    #                 "model_state_dict": model.state_dict(),
-    #                 "model_cfg": model_cfg.__dict__,
-    #                 "tokenizer_name": data_cfg.tokenizer_name,
-    #                 "max_length": data_cfg.max_length,
-    #                 "id2label": id2label,
-    #             },
-    #             best_path,
-    #         )
-    #         # save log csv after each epoch (safe for crashes)
-    #         pd.DataFrame(history).to_csv(train_cfg.log_csv, index=False)
-
-    #         print(f"  ✓ saved best checkpoint to: {best_path}")
+    # --------------------
+    # 6) Training loop (best by val macro-F1)
+    # --------------------
     best_val_macro_f1 = -1.0
-
     history = []
 
     for epoch in range(1, train_cfg.epochs + 1):
         train_metrics = train_one_epoch(
-            model, train_loader, optimizer, device,
-            criterion=criterion, grad_clip=train_cfg.grad_clip
+            model=model,
+            loader=train_loader,
+            optimizer=optimizer,
+            device=device,
+            grad_clip=train_cfg.grad_clip,
+            criterion=criterion,
         )
-        val_metrics = evaluate(model, val_loader, device, criterion=criterion)
 
-        # print(
-        #     f"Epoch {epoch:02d} | "
-        #     f"train loss {train_metrics['loss']:.4f} acc {train_metrics['acc']:.4f} | "
-        #     f"val loss {val_metrics['loss']:.4f} acc {val_metrics['acc']:.4f} "
-        #     f"macro_f1 {val_metrics['macro_f1']:.4f}"
-        # )
+        val_metrics = evaluate(
+            model=model,
+            loader=val_loader,
+            device=device,
+            criterion=criterion,
+        )
+
+        # scheduler.step()  # if you enabled scheduler
+
         print(
             f"Epoch {epoch:02d} | "
             f"train loss {train_metrics['loss']:.4f} acc {train_metrics['acc']:.4f} macro_f1 {train_metrics['macro_f1']:.4f} | "
             f"val loss {val_metrics['loss']:.4f} acc {val_metrics['acc']:.4f} macro_f1 {val_metrics['macro_f1']:.4f}"
         )
 
-        # history.append({
-        #     "epoch": epoch,
-        #     "train_loss": train_metrics["loss"],
-        #     "train_acc": train_metrics["acc"],
-        #     "val_loss": val_metrics["loss"],
-        #     "val_acc": val_metrics["acc"],
-        #     "val_macro_f1": val_metrics["macro_f1"]
-        # })
         history.append({
-    "epoch": epoch,
-    "train_loss": train_metrics["loss"],
-    "train_acc": train_metrics["acc"],
-    "train_macro_f1": train_metrics["macro_f1"],
-    "val_loss": val_metrics["loss"],
-    "val_acc": val_metrics["acc"],
-    "val_macro_f1": val_metrics["macro_f1"],
-})
+            "epoch": epoch,
+            "train_loss": train_metrics["loss"],
+            "train_acc": train_metrics["acc"],
+            "train_macro_f1": train_metrics["macro_f1"],
+            "val_loss": val_metrics["loss"],
+            "val_acc": val_metrics["acc"],
+            "val_macro_f1": val_metrics["macro_f1"],
+        })
 
-        # ذخیره بهترین مدل بر اساس Macro-F1
+        # save best checkpoint by macro-F1
         if val_metrics["macro_f1"] > best_val_macro_f1:
             best_val_macro_f1 = val_metrics["macro_f1"]
 
@@ -380,26 +365,24 @@ def main():
                     "max_length": data_cfg.max_length,
                     "id2label": id2label,
                     "best_val_macro_f1": best_val_macro_f1,
-                    "data_cfg": data_cfg.__dict__,          # ✅ اضافه شود
-                    "variant": train_cfg.variant,           # ✅ اضافه شود
+                    "data_cfg": data_cfg.__dict__,
+                    "variant": train_cfg.variant,
                     "seed": train_cfg.seed,
                 },
                 best_path,
             )
 
-            os.makedirs(os.path.dirname(train_cfg.log_csv), exist_ok=True)
             pd.DataFrame(history).to_csv(train_cfg.log_csv, index=False)
-
             print(f"  ✓ saved best checkpoint (macro_f1={best_val_macro_f1:.4f}) to: {best_path}")
 
-    
+    # --------------------
+    # 7) Save logs + plots
+    # --------------------
     df = pd.DataFrame(history)
     df.to_csv(train_cfg.log_csv, index=False)
 
-    # ---- Plot curves ----
+    # Loss curve
     fig = plt.figure(figsize=(10, 4))
-
-    # Loss
     plt.plot(df["epoch"], df["train_loss"], label="train_loss")
     plt.plot(df["epoch"], df["val_loss"], label="val_loss")
     plt.xlabel("Epoch")
@@ -410,7 +393,7 @@ def main():
     fig.savefig(train_cfg.curve_path.replace(".png", "_loss.png"), dpi=200, bbox_inches="tight")
     plt.close(fig)
 
-    # Accuracy
+    # Accuracy curve
     fig = plt.figure(figsize=(10, 4))
     plt.plot(df["epoch"], df["train_acc"], label="train_acc")
     plt.plot(df["epoch"], df["val_acc"], label="val_acc")
@@ -424,10 +407,9 @@ def main():
 
     print(f"Saved log CSV to: {train_cfg.log_csv}")
     print(f"Saved curves to: {train_cfg.curve_path.replace('.png','_loss.png')} and _acc.png")
-
     print("Done.")
 
-
+    
 if __name__ == "__main__":
     main()
 
