@@ -44,6 +44,20 @@ class SinusoidalPositionalEncoding(nn.Module):
         return self.dropout(x)
 
 
+
+def masked_max_pooling(x: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
+    """
+    x: (B,T,d_model)
+    attention_mask: (B,T) 1 for tokens, 0 for padding
+    returns: (B,d_model)
+    """
+    mask = attention_mask.unsqueeze(-1).bool()  # (B,T,1)
+    x_masked = x.masked_fill(~mask, float("-inf"))
+    return x_masked.max(dim=1).values
+
+
+
+
 def masked_mean_pooling(x: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
     """
     x: (B,T,d_model)
@@ -113,7 +127,12 @@ class FinancialTransformer(nn.Module):
             nn.Dropout(cfg.dropout),
             nn.Linear(cfg.d_model, cfg.num_classes),
         )
-
+        # self.classifier = nn.Sequential(
+        #         nn.Linear(2 * cfg.d_model, cfg.d_model),
+        #         nn.GELU(),
+        #         nn.Dropout(cfg.dropout),
+        #         nn.Linear(cfg.d_model, cfg.num_classes),
+        #     )
         self._init_weights()
 
     def _init_weights(self):
@@ -162,6 +181,15 @@ class FinancialTransformer(nn.Module):
                 )
 
         pooled = masked_mean_pooling(x, attention_mask)  # (B,d_model)
+        
+        
+        # mean_pooled = masked_mean_pooling(x, attention_mask)
+        # max_pooled = masked_max_pooling(x, attention_mask)
+
+        # pooled = torch.cat([mean_pooled, max_pooled], dim=-1)  # (B, 2*d_model)
+
+        # logits = self.classifier(pooled)
+        
         logits = self.classifier(pooled)  # (B,C)
 
         return logits, last_attn

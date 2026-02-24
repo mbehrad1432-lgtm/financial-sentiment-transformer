@@ -75,7 +75,7 @@ class TrainConfig:
     variant: str = "sentences_allagree"
     seed: int = 42
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
-    epochs: int = 80   #10
+    epochs: int = 120   #10
     lr: float = 1e-4
     weight_decay: float = 0.01
     grad_clip: float = 1.0
@@ -213,7 +213,7 @@ def main():
     train_cfg = TrainConfig()
     data_cfg = DataConfig(
         tokenizer_name="bert-base-uncased",
-        max_length=128,
+        max_length=128, #128
         train_frac=0.8,
         seed=train_cfg.seed,
         batch_size=32,
@@ -233,21 +233,21 @@ def main():
     # --------------------
     # 2) Pretrained embeddings (GloVe)  <-- allowed part
     # --------------------
-    embedding_dim = 100  # GloVe 100d
+    embedding_dim = 300  # GloVe 100d
     vocab_size = tokenizer.vocab_size
 
     # default random init for all tokens
     embedding_matrix = torch.randn(vocab_size, embedding_dim) * 0.01
 
     # IMPORTANT: use an absolute path relative to PROJECT_ROOT
-    glove_path = PROJECT_ROOT / "data" / "embeddings" / "glove.6B.100d.txt"
+    glove_path = PROJECT_ROOT / "data" / "embeddings" / "glove.42B.300d.txt"
     print("Loading GloVe from:", glove_path)
 
     # Fail fast with a helpful message
     if not glove_path.exists():
         raise FileNotFoundError(
             f"GloVe file not found at: {glove_path}\n"
-            f"Put glove.6B.100d.txt in: {PROJECT_ROOT / 'data' / 'embeddings'}"
+            f"Put glove.42B.300d.txt in: {PROJECT_ROOT / 'data' / 'embeddings'}"
         )
 
     glove = {}
@@ -276,15 +276,20 @@ def main():
         vocab_size=vocab_size,
         max_length=data_cfg.max_length,
         d_model=embedding_dim,       # MUST match embedding_dim
-        num_heads=4,
-        num_layers=2,                # slightly smaller to reduce overfit
-        d_ff=4 * embedding_dim,
-        dropout=0.3,
+        num_heads=6,
+        num_layers=3,                # slightly smaller to reduce overfit 3
+        d_ff=4 * embedding_dim , # 4*
+        dropout=0.3, # 0.3
         num_classes=3,
     )
 
     model = FinancialTransformer(model_cfg, embedding_matrix=embedding_matrix).to(device)
+    # Freeze token embeddings for first few epochs
+    freeze_epochs = 5
+    for param in model.token_emb.parameters():
+        param.requires_grad = False
 
+    print(f"Token embeddings frozen for first {freeze_epochs} epochs.")
     # --------------------
     # 4) Loss + Optimizer
     # --------------------
@@ -292,7 +297,7 @@ def main():
     # criterion = FocalLoss(gamma=2, alpha=alpha)
     # If you want the simpler/cleaner option (often more stable with sampler), use:
     # weights=torch.tensor([1.15, 1.0, 1.10], device=device)
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(label_smoothing=0.05)
 
     optimizer = AdamW(
         model.parameters(),
@@ -319,6 +324,16 @@ def main():
     history = []
 
     for epoch in range(1, train_cfg.epochs + 1):
+        
+        
+
+    # Unfreeze embeddings after freeze_epochs
+        if epoch == freeze_epochs + 1:
+            for param in model.token_emb.parameters():
+                param.requires_grad = True
+            print("Token embeddings unfrozen.")
+
+        
         train_metrics = train_one_epoch(
             model=model,
             loader=train_loader,
