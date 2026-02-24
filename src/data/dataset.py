@@ -253,8 +253,9 @@ def build_dataloaders(
     train_loader = DataLoader(
         train_ds,
         batch_size=cfg.batch_size,
-        sampler=sampler,          # <-- به جای shuffle
-        shuffle=False,            # <-- باید False باشد
+        sampler = sampler
+                  # <-- به جای shuffle
+        shuffle=True,            # <-- باید False باشد
         num_workers=cfg.num_workers,
     )
 
