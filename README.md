@@ -1,215 +1,200 @@
-Financial Sentiment Analysis using Transformer
+# Financial Sentiment Analysis (Custom Transformer)
 
-This project implements a custom Transformer-based model for Financial Sentiment Analysis.
-The model is built from scratch using PyTorch and does not rely on pretrained transformer architectures such as BERT.
+This repository implements a **Transformer-based sentiment classifier built from scratch in PyTorch** (i.e., it does **not** use pretrained Transformer encoders like BERT for the model).  
+A **BERT tokenizer** (`bert-base-uncased`) is used only for tokenization and vocabulary.
 
-The goal is to classify financial sentences into sentiment categories using a self-implemented attention mechanism and transformer blocks
+The goal is to classify financial sentences into **three** sentiment classes:
 
-Project Objective
+- **negative**
+- **neutral**
+- **positive**
 
-Classify financial text into three sentiment classes:
+Dataset: `financial_phrasebank` (Hugging Face Datasets)
 
-Negative
+---
 
-Neutral
+## Model Architecture
 
-Positive
+### Transformer Sentiment Classifier (your model)
 
-Dataset used:
+```text
+Input batch of sentences
+        |
+        v
++-------------------------------+
+| Tokenizer (BERT uncased)      |
+| - WordPiece tokenize          |
+| - pad/truncate to T=128       |
++-------------------------------+
+        |
+        |  input_ids:      (B, 128)
+        |  attention_mask: (B, 128)
+        v
++-------------------------------+
+| Token Embedding (GloVe-init)  |
+| Embedding[vocab_size, 300]    |
++-------------------------------+
+        |
+        |  X0 shape: (B, 128, 300)
+        v
++-------------------------------+
+| + Positional Encoding         |
+| (sinusoidal)                  |
++-------------------------------+
+        |
+        v
+========================================================
+Stack of Transformer Encoder Blocks (num_layers = 3)
+Each block keeps the SAME shape: (B, 128, 300)
+========================================================
 
-financial_phrasebank
+   Block (repeated 3x):
+   -------------------
+   +-------------------------+
+   | Multi-Head Self-Attn    |   heads = 6
+   | attention_mask used     |   (pads masked out)
+   +-------------------------+
+            |
+       + Residual + LayerNorm
+            |
+   +-------------------------+
+   | FeedForward (FFN)       |
+   | 300 -> 1200 -> 300      |
+   +-------------------------+
+            |
+       + Residual + LayerNorm
+            |
+   Output: (B, 128, 300)
 
+========================================================
+        |
+        v
++-------------------------------+
+| Masked Mean Pooling           |
+| mean over tokens where mask=1 |
+| (ignore [PAD])                |
++-------------------------------+
+        |
+        |  pooled: (B, 300)
+        v
++-------------------------------+
+| Classifier (MLP)              |
+| Linear 300->300 + GELU        |
+| Dropout                       |
+| Linear 300->3                 |
++-------------------------------+
+        |
+        | logits: (B, 3)
+        v
+Prediction = argmax(logits)  -> {negative, neutral, positive}
+```
 
-Model Architecture
+### Components
 
-The model consists of the following components:
+- **Token Embedding**: initialized from **GloVe 42B 300d** vectors when available (trainable after initial freeze period)
+- **Sinusoidal Positional Encoding**
+- **Multi-Head Self-Attention**
+- **Transformer Encoder Blocks** (stacked)
+- **Masked Mean Pooling** (ignores padding)
+- **MLP Classification Head** (3-class logits)
+---
 
-Token Embedding Layer
+## Setup
 
-Sinusoidal Positional Encoding
+### 1) Install dependencies
 
-Multi-Head Self Attention
+```bash
+pip install -r requirements.txt
+```
 
-Transformer Blocks
+### 2) Place GloVe embeddings (required)
 
-Masked Mean Pooling
+Training expects the file:
 
-MLP Classification Hea
+```text
+data/embeddings/glove.42B.300d.txt
+```
 
-Pipeline:
+If the file is missing, training will raise a `FileNotFoundError`.
 
-Embedding → Positional Encoding → Transformer Layers → Pooling → Classifier
+---
 
-Project Structure:
-
-financial-sentiment-transformer/
-│
-├── src/
-│   ├── data/
-│   │   └── dataset.py
-│   │
-│   ├── models/
-│   │   ├── attention.py
-│   │   ├── blocks.py
-│   │   └── model.py
-│   │
-│   ├── train.py
-│   ├── eval.py
-│   └── predict_test.py
-│
-├── outputs/
-│   ├── checkpoints/
-│   ├── figures/
-│   ├── logs/
-│   └── submissions/
-│
-├── .gitignore
-└── README.md
-
-
-
-
-Installation:
-
-pip install torch transformers datasets scikit-learn matplotlib pandas tqdm
-
-
-
-Training
+## Training
 
 Run:
 
+```bash
 python src/train.py
+```
 
-Outputs:
+### Outputs
 
-Best model checkpoint:
+- **Best checkpoint** (selected by highest validation **Macro F1**):  
+  `outputs/checkpoints/best.pt`
 
-outputs/checkpoints/best.pt
+- **Training curves**:  
+  `outputs/figures/*_loss.png`, `outputs/figures/*_acc.png`
 
-Training curves:
+- **Training logs**:  
+  `outputs/logs/train_log.csv`
 
-outputs/figures/
+Notes:
+- The model freezes the token embedding layer for the first few epochs, then unfreezes it for full fine-tuning.
+- Training uses a **stratified train/val split** and **weighted random sampling** to mitigate class imbalance.
 
-Training logs:
+---
 
-outputs/logs/train_log.csv
-
-The best model is selected based on highest Macro F1 score on validation set
-
-Evaluation
+## Evaluation (Validation Set)
 
 Run:
 
+```bash
 python src/eval.py
+```
 
-Metrics reported:
+Metrics reported (on validation set):
+- Accuracy
+- Precision / Recall
+- Macro F1
+- Weighted F1
+- Classification report
+- Confusion matrix
 
-Accuracy
+The validation set is used **only** for evaluation/model selection.
 
-Precision
+---
 
-Recall
-
-Macro F1
-
-Weighted F1
-
-Classification Report
-
-Confusion Matrix
-
-The evaluation is performed only on the validation set.
-No validation data is used during training
-
-Test Prediction
+## Test Prediction (Submission Generation)
 
 Run:
 
+```bash
 python src/predict_test.py
+```
 
 Output file:
+- `outputs/submissions/test_predictions.csv`
 
-outputs/submissions/test_predictions.csv
+---
 
-Output format:
+## Techniques Used
 
-sentence	prediction	prediction_id
+- Cross Entropy Loss + **Label Smoothing**
+- **WeightedRandomSampler** (class imbalance)
+- **Masked Mean Pooling**
+- **Xavier** initialization (linear layers)
+- Embedding freeze → unfreeze schedule
 
-The script loads the best checkpoint and generates predictions for the test set.
+---
 
-📈 Evaluation Metrics
+## Model Selection Strategy
 
-The following metrics are used:
+- Train only on the training split
+- Select best checkpoint using validation **Macro F1**
+- Test set is never used during training or tuning
 
-Accuracy
+---
 
-Precision
+## License
 
-Recall
-
-Macro F1 (Primary selection metric)
-
-Weighted F1
-
-Confusion Matrix
-
-Macro F1 is used as the main model selection criterion to ensure balanced performance across classes.
-
-🛠 Techniques Used
-
-Cross Entropy Loss
-
-Label Smoothing
-
-Weighted Random Sampling
-
-Learning Rate Scheduler
-
-Masked Mean Pooling
-
-Xavier Initialization
-
-🧩 Model Selection Strategy
-
-The model is trained only on the training set.
-
-Validation set is used exclusively for model selection.
-
-The best checkpoint is selected based on highest validation Macro F1.
-
-The test set is never used during training or hyperparameter tuning.
-
-🤝 Team Workflow
-
-Development workflow:
-
-Each feature is implemented in a separate branch.
-
-Pull Requests are created for merging into main.
-
-Code is reviewed before merging.
-
-Team members synchronize changes using git pull.
-
-📊 Best Validation Performance
-
-Macro F1 ≈ 0.77
-
-Accuracy ≈ 0.83
-
-🔮 Future Improvements
-
-Improve Positive class precision
-
-Experiment with Focal Loss
-
-Test alternative pooling strategies (CLS / Attention Pooling)
-
-Increase Transformer depth
-
-Integrate pretrained embeddings
-
-📜 License
-
-This project is developed for educational and academic purposes
+Developed for educational and academic purposes.
